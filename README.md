@@ -1,273 +1,207 @@
-[NBA_Standings_Prediction_README.md](https://github.com/user-attachments/files/33956574/NBA_Standings_Prediction_README.md)
+[README.md](https://github.com/user-attachments/files/33978316/README.md)
+# Predicting NBA Game Outcomes Using Logistic Regression
 
-# Predicting NBA Game Outcomes Using Logistic Regression: An Analysis of Historical Team and Player Performance
+### An Analysis of Historical Team and Player Performance
 
-**Status:** Historical game results validated; player box-score ingestion and merge scripts developed; modeling not yet started.
+**Project type:** Predictive Analytics course project  
+**Project status:** Data collection and preparation completed; exploratory data analysis and model development next  
+**Tools:** Python · Google Colab · pandas · scikit-learn (planned) · Matplotlib (planned)  
+**Historical coverage:** 2015–16 through 2024–25 NBA regular seasons
 
 ## 1. Project overview
 
-This project aims to forecast NBA regular-season standings by estimating team strength and game-win probabilities from historical game results and player-level performance. The planned modeling approach will consider:
+This project investigates whether historical NBA team and player performance can be used to **predict the probability that the home team wins a regular-season game**. The primary predictive method is **binary logistic regression**. The project emphasizes careful data validation, pregame feature construction, model interpretation, and evaluation on later games or seasons.
 
-- Historical team performance and home-court advantage
-- Player-level box-score statistics and experience
-- Expected roster and lineup strength, including starting five versus bench
-- Opponent and head-to-head history
-- Game-by-game probabilities and season schedule simulation
+This is a **single-model research project**: logistic regression is the predictive algorithm to be developed and evaluated. Different feature sets may be examined within logistic regression, but comparisons among multiple machine-learning algorithms are **not** the research objective.
 
-**Current scope:** Data engineering and exploratory preparation. No trained prediction model, accuracy metrics, or simulated standings are available yet.
+**Future extension (outside the core course scope):** Use predicted game-win probabilities in a Monte Carlo simulation of remaining games to estimate NBA regular-season standings.
 
-## 2. Technical environment
+## 2. Research question and objectives
 
-- **Notebook:** Google Colab / Python
-- **Storage:** Google Drive
-- **Libraries used:** `pandas`, `requests`, `pathlib`, `time`, and `tqdm`
-- **Game data source:** ESPN public NBA scoreboard endpoint
-- **Player data source:** ESPN public NBA game-summary endpoint
+**Research question:** To what extent can historical team-level and player-level indicators predict NBA regular-season game outcomes using logistic regression?
 
-We initially explored the `nba_api` NBA Stats endpoints, but requests timed out in Colab. We therefore switched to ESPN's public-facing endpoints. These are not a guaranteed or versioned data contract; availability, field names, and access conditions may change.
+The objectives are to:
 
-```python
-from pathlib import Path
-BASE_DIR = Path('/content/drive/MyDrive/Colab Notebooks/Dataset/NBA Dataset')
-```
+1. Explore NBA game results, team performance, and player statistics for potential predictive relationships.
+2. Engineer features that would have been known **before each game's tipoff**, including recent team performance and historical player contributions.
+3. Develop a **logistic regression** classifier with `HOME_WIN` as the target variable.
+4. Evaluate its classification performance and the quality of its predicted win probabilities on chronologically held-out games.
+5. Interpret estimated predictor effects while acknowledging data and modeling limitations.
 
-## 3. Data sources and extraction
+## 3. Data sources and study period
 
-### 3.1 Historical game results
+Historical NBA data were collected with Python from ESPN public-facing endpoints:
 
-ESPN scoreboard endpoint:
+| Dataset | Endpoint | Key information |
+|---|---|---|
+| Games | `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard` | Date, season, team IDs, home and away teams, final scores, home-team win |
+| Player box scores | `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary` | Players, teams, starter/DNP indicators, minutes, shooting, points, rebounds, assists, other statistics |
 
-```text
-https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard
-```
+The collection covers ten seasons, **2015–16 to 2024–25**. The ESPN interfaces used here are public-facing endpoints, not a guaranteed stable data contract; availability and response formats may change.
 
-Typical request parameters:
+### Historical game coverage
 
-```python
-params = {'dates': '20241022', 'limit': 100}
-```
+| Season | Regular-season games |
+|---|---:|
+| 2015–16 | 1,230 |
+| 2016–17 | 1,230 |
+| 2017–18 | 1,230 |
+| 2018–19 | 1,230 |
+| 2019–20 | 1,059 |
+| 2020–21 | 1,080 |
+| 2021–22 | 1,230 |
+| 2022–23 | 1,230 |
+| 2023–24 | 1,230 |
+| 2024–25 | 1,230 |
+| **Total** | **11,979** |
 
-The workflow queried game dates across ten NBA seasons, extracted game identifiers, dates, teams, scores, and home-team win indicators, and saved raw and cleaned season-level CSV files.
+The 2019–20 and 2020–21 seasons had unusual schedules, so their game counts should not be compared with 82-game seasons without accounting for schedule differences.
 
-### 3.2 Player box scores
+## 4. Completed workflow
 
-ESPN game-summary endpoint:
+### Phase 1 — Data collection
 
-```text
-https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary
-```
+- Collected and combined **11,979 regular-season game records** across ten NBA seasons.
+- Downloaded **308,263 original player box-score records** involving **1,488 unique ESPN player IDs**.
+- Used game IDs to join game metadata with player box-score records.
+- Retained the raw information for auditing and later cleaning.
 
-Example:
+### Phase 2 — Data preparation and validation
 
-```python
-import requests
-payload = requests.get(
-    'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary',
-    params={'event': '400827888'},
-    timeout=30,
-).json()
-```
+- Investigated missingness: **53,499 original player records** with missing box-score statistics were marked `DID_NOT_PLAY = True`.
+- Converted shooting entries such as `FG = "8-15"` into made/attempted numeric components for analysis.
+- Identified and removed **36 suspected duplicate player-identity records** using reviewed, same-team/same-game ID-pair rules. These were controlled corrections rather than name-only deduplication.
+- Investigated and corrected five starter flags across three exceptional team-games; the resulting starter-count check passed for **23,958 of 23,958 team-games**. This checks counts, not every lineup's independent historical accuracy.
+- Checked the sum of player points against official team scores. Found **487 games with placeholder or unavailable player box scores**, all in the 2015–16 to 2017–18 seasons.
+- Investigated and applied targeted corrections to the other three team-score mismatches.
+- Preserved all game outcomes for team-level analysis, while excluding placeholder box-score games from player-performance analysis.
 
-The extractor iterates through `boxscore.players`, the nested `statistics` groups, and their `athletes`. It maps each statistics group's `names` to the player's corresponding `stats` values.
+### Latest prepared datasets
 
-Extracted player fields include:
+| Data asset | Reported count | Intended use |
+|---|---:|---|
+| Cleaned game results | **11,979 games** | Game outcomes and team-level features |
+| Games passing both team-score checks | **11,492 games** | Eligible historical player box scores |
+| Games with placeholder box scores | **487 games** | Retain outcomes; exclude unreliable player performances |
+| Cleaned player table | **308,226 records** | Audit-ready player records, including DNP and flagged games |
+| Player-performance subset | **244,588 records** | Player-level descriptive analysis and historical features |
+| Team-games with five starter flags | **23,958 / 23,958** | Starting-five count validation |
 
-`SEASON`, `GAME_ID`, `GAME_DATE`, `TEAM_ID`, `TEAM`, `PLAYER_ID`, `PLAYER`, `POSITION`, `STARTER`, `DID_NOT_PLAY`, `MIN`, `PTS`, `FG`, `3PT`, `FT`, `REB`, `AST`, `TO`, `STL`, `BLK`, `OREB`, `DREB`, `PF`, and `+/-`.
+**Outstanding caveat:** Of the 244,588 player-performance records, **245 have unavailable or nonnumeric minutes**. These should not be used directly for per-minute features until participation and minutes are resolved. Matching team-point totals is a useful consistency check but does **not** prove that every individual player statistic is correct.
 
-**Parsing note:** `FG`, `3PT`, and `FT` are made/attempted strings, not numeric percentages; `MIN` and `+/-` also require normalization before modeling.
+## 5. Data processing rules
 
-## 4. Historical game data cleaning
+- The original downloaded files are retained separately from cleaned analysis data.
+- **DNP player records** are excluded from the `players_performance` analysis subset, but kept in the comprehensive player table.
+- **Placeholder-game player records** are excluded from the player-performance analysis subset; their **game outcomes remain available** in the game-level dataset.
+- Legitimate zero values (for example, a player who scored zero points) are **not** automatically treated as missing.
+- Duplicate-identity and selected box-score corrections are documented separately.
+- A game or player record that passes one validation check may still require other checks before modeling.
 
-The initial scoreboard extraction contained events outside the regular season. The cleaning pipeline:
+## 6. Planned exploratory data analysis
 
-1. Selected ESPN regular-season events (`season.type == 2`).
-2. Restricted matchups to the 30 recognized NBA franchises, allowing the `LA Clippers` name variant.
-3. Excluded All-Star mini-tournament games accidentally returned with the 2024–25 schedule.
-4. Excluded NBA Cup championship games that do **not** count toward regular-season standings (2023–24 and 2024–25).
-5. Deduplicated game records and checked season-level counts.
+The EDA notebook will examine:
 
-### Validated season totals
+- Game counts, scoring distributions, margins, and season trends.
+- Home-court advantage and home-versus-away performance.
+- Team scoring and points allowed, point differential, and win percentage.
+- Pregame rolling team form (for example, previous 5 and 10 games).
+- Prior head-to-head performance, rest days, and opponent strength.
+- Historical player scoring, shooting, participation, starting-five versus bench contributions, and relevant missing-data patterns.
+- Associations between **pregame** features and game outcomes, including feature distributions and correlations.
 
-| Season | Games | NBA teams | Expected games | Count check |
-|---|---:|---:|---:|---|
-| 2015–16 | 1,230 | 30 | 1,230 | Pass |
-| 2016–17 | 1,230 | 30 | 1,230 | Pass |
-| 2017–18 | 1,230 | 30 | 1,230 | Pass |
-| 2018–19 | 1,230 | 30 | 1,230 | Pass |
-| 2019–20 | 1,059 | 30 | 1,059 | Pass |
-| 2020–21 | 1,080 | 30 | 1,080 | Pass |
-| 2021–22 | 1,230 | 30 | 1,230 | Pass |
-| 2022–23 | 1,230 | 30 | 1,230 | Pass |
-| 2023–24 | 1,230 | 30 | 1,230 | Pass |
-| 2024–25 | 1,230 | 30 | 1,230 | Pass |
-| **Total** | **12,009** | | **12,009** | **Pass** |
+Descriptive analyses may summarize finished games; however, **same-game scores and player statistics cannot be used as predictors of that same game's result**.
 
-The 2019–20 season was disrupted by COVID-19; 2020–21 used a shortened 72-game-per-team schedule. **Passing game-count checks does not by itself prove every individual game record is correct.**
+## 7. Predictive modeling plan
 
-## 5. Player box-score extraction: testing and batching
+### Outcome variable
 
-### Pilot test
+`HOME_WIN` is the binary response:
 
-Five game summaries were tested, one from each of 2015–16 through 2019–20:
+- `1` = the home team won;
+- `0` = the away team won.
 
-| Season | Example game ID | Player records |
-|---|---|---:|
-| 2015–16 | 400827888 | 26 |
-| 2016–17 | 400899375 | 26 |
-| 2017–18 | 400974437 | 25 |
-| 2018–19 | 401070213 | 26 |
-| 2019–20 | 401160623 | 26 |
-| **Total** | | **129** |
+### Chosen predictive model: logistic regression
 
-In this pilot, all ten team-game groups had exactly five starters, and the 129 extracted records included 50 starters. This validates the **sample**, not the entire ten-season extraction.
+The model estimates a probability of home-team victory:
 
-### Full extraction workflow developed
+\[
+P(\text{HOME\_WIN}=1\mid X)=\frac{1}{1+\exp[-(\beta_0+\beta_1X_1+\cdots+\beta_pX_p)]}.
+\]
 
-- Process the **12,009** known game IDs.
-- Download summaries with `requests.Session()`.
-- Retry transient failures up to three times.
-- Wait approximately 0.8 seconds between requests.
-- Write a checkpoint CSV for every 100 games under `player_boxscores/`.
-- Record failed requests in `failed_batch_XXXX.csv`.
-- Concatenate saved batch files and remove duplicate player-game-team keys.
+**Candidate predictors** (to be engineered and assessed, not yet final):
 
-**Important limitation of the initial checkpoint implementation:** It skips any batch with an existing `players_batch_XXXX.csv`, even if that batch had failed game requests. Therefore, saved batches must be reconciled with `failed_batch_XXXX.csv` and missing game IDs must be retried before claiming complete coverage. Long Colab sessions may also disconnect.
+| Feature group | Pregame examples |
+|---|---|
+| Team form | Previous-game win percentage, rolling point differential, rolling points scored/allowed |
+| Home/away | Home-team indicator or historical home/away splits |
+| Game context | Rest days, back-to-back status, relative rest |
+| Opposition | Pregame opponent strength, prior head-to-head record |
+| Player contribution | Lagged expected starter/bench strength, historical player production, expected minutes/role |
 
-## 6. Combining game and player data
+**Important:** Player features must use information available before tipoff. The actual starters, player minutes, and box scores of the game being predicted cannot be used as pregame predictors unless they were independently known at prediction time.
 
-There are two levels of observation:
+### Evaluation approach
 
-- **Game table:** one row per `GAME_ID`.
-- **Player table:** multiple rows per `GAME_ID` (one row per player and team).
+- **Chronological training/validation/test splits** to prevent future games leaking into earlier predictions.
+- Classification metrics: accuracy, precision, recall, F1-score, and ROC-AUC, where appropriate.
+- Probability metrics: **log loss and Brier score**, with calibration assessment.
+- Compare the fitted model to a simple non-trained reference (for example, a constant historical home-win probability) for context; this does not introduce a second predictive algorithm to the study.
+- Use relevant logistic regression coefficients and odds ratios to interpret associations, with care about collinearity and the limits of causal claims.
 
-This is a **many-to-one merge** from player rows to game metadata. The resulting table remains **player-game level**, not team-game level.
+**No model has been trained or evaluated yet.** Model coefficients, statistical significance, and performance metrics will be reported after implementation.
 
-```python
-import pandas as pd
-from pathlib import Path
-
-BASE_DIR = Path('/content/drive/MyDrive/Colab Notebooks/Dataset/NBA Dataset')
-games = pd.read_csv(BASE_DIR / 'nba_games_2015_2025_combined.csv',
-                    dtype={'GAME_ID': str})
-players = pd.read_csv(BASE_DIR / 'nba_player_boxscores_2015_2025.csv',
-                      dtype={'GAME_ID': str, 'PLAYER_ID': str, 'TEAM_ID': str})
-
-assert games['GAME_ID'].is_unique, 'Game IDs must be unique in games table'
-
-merged = players.merge(
-    games.drop(columns=['SEASON', 'GAME_DATE'], errors='ignore'),
-    on='GAME_ID',
-    how='left',
-    validate='many_to_one',
-    indicator=True,
-)
-
-print(merged['_merge'].value_counts())
-assert merged['_merge'].eq('both').all(), 'Unmatched player rows detected'
-merged = merged.drop(columns='_merge')
-
-output = BASE_DIR / 'nba_complete_dataset_2015_2025.csv'
-merged.to_csv(output, index=False)
-print('Saved:', output)
-```
-
-The merge script was provided; **successful execution and final output counts have not been independently confirmed in this documentation**.
-
-## 7. Quality assurance checks
-
-Recommended checks after downloading and merging:
-
-1. Compare unique player-data `GAME_ID`s against all **12,009** historical games.
-2. Report missing game IDs and retry them.
-3. Check exactly two NBA teams per game.
-4. Audit exactly five starters per team-game, investigating exceptions rather than automatically deleting them.
-5. Check duplicates on (`GAME_ID`, `TEAM_ID`, `PLAYER_ID`).
-6. Confirm that player `TEAM_ID` belongs to the game's home or away team.
-7. Inspect null values, DNPs, minutes, and box-score field formats.
-8. Cross-check selected player/team point totals with final game scores.
-9. Ensure `GAME_DATE` and `SEASON` agree between source tables.
-
-A prior discussion mentioned a player-data coverage figure of **11,979 games** versus **12,009** expected, a possible gap of **30 games**. This figure needs to be rechecked against actual saved files; it should **not** be presented as a validated final count.
-
-## 8. Proposed repository structure
+## 8. Repository structure
 
 ```text
 nba-standings-prediction/
 ├── README.md
 ├── notebooks/
-│   ├── 01_collect_games.ipynb
-│   ├── 02_clean_validate_games.ipynb
-│   ├── 03_collect_player_boxscores.ipynb
-│   ├── 04_merge_validate_datasets.ipynb
-│   └── 05_feature_engineering.ipynb      # planned
-├── data/
-│   ├── raw/                            # optional local samples only
-│   ├── processed/                      # optional local samples only
-│   └── validation_report.csv
-├── src/                                 # planned reusable scripts
-├── requirements.txt
-└── .gitignore
+│   ├── 01_nba_data_collection.ipynb
+│   ├── 02_nba_data_preparation.ipynb
+│   └── 03_nba_exploratory_analysis.ipynb       # planned
+├── data/                                        # optional samples / data dictionary
+├── reports/                                     # planned charts and results
+├── requirements.txt                            # add/update as dependencies are finalized
+├── .gitignore
+└── LICENSE
 ```
 
-This is a **recommended structure**, not a claim that all these files already exist. Export the actual Colab notebooks and rename them consistently before publishing. Large data files can remain on Google Drive, with instructions for reproducing the downloads; verify source terms and privacy before sharing.
+Only notebooks and files actually created should be uploaded; planned entries illustrate the intended organization. Large raw datasets and batch-download outputs may be kept outside GitHub with reproducible collection instructions.
 
-Suggested `.gitignore`:
+### Main cleaned files on Google Drive
 
-```gitignore
-.ipynb_checkpoints/
-__pycache__/
-.env
-*.log
-data/raw/
-data/processed/
-player_boxscores/
+```text
+Colab Notebooks/Dataset/NBA Dataset/cleaned/
+├── nba_games_cleaned.csv
+├── nba_players_cleaned.csv
+├── nba_players_performance.csv
+├── nba_game_quality_report.csv
+└── nba_correction_audit.csv
 ```
 
-## 9. Modeling roadmap
+## 9. Project status and next steps
 
-**Phase 1 — Completed:** Historical game extraction, cleaning, and season-level count validation.
+| Phase | Status |
+|---|---|
+| 1. Historical data collection | Completed |
+| 2. Data preparation and validation | Completed for primary datasets; minutes caveat remains |
+| 3. Exploratory data analysis | Next |
+| 4. Pregame feature engineering | Planned |
+| 5. Logistic regression training and evaluation | Planned |
+| 6. Standings simulation | Optional future extension |
 
-**Phase 2 — In progress:** Download all player game logs, reconcile missing games, normalize statistics, and validate the merged player-game dataset.
+**Next milestone:** Complete EDA, resolve or explicitly flag the remaining unavailable-minute cases as needed, engineer leakage-free pregame features, and fit/evaluate logistic regression using a time-based split.
 
-**Phase 3 — Planned:** Engineer pregame features: rolling team win rate, recent scoring margin, home/away splits, rest days, opponent strength, roster availability, starter/bench contributions, and prior head-to-head outcomes. Experience features will require a separate historical roster or career-history source.
+## 10. Limitations and reproducibility
 
-**Phase 4 — Planned:** Build chronological train/validation/test splits and train baseline and more advanced game-win probability models. Compare against simple baselines and assess calibration as well as discrimination.
-
-**Phase 5 — Planned:** Obtain the target season's actual schedule and updated rosters; predict individual matchups and simulate remaining games repeatedly to estimate win totals, standings, and uncertainty.
-
-### Avoiding data leakage
-
-For a game on date *t*, all features must be computed only from information available **before tipoff on date t**. Do not use full-season player averages or final standings as predictors for games earlier in that season. Evaluate on future seasons or chronological holdouts rather than randomly mixing games from the same season.
-
-## 10. Reproducibility and caveats
-
-- Historical window currently ends at **2024–25**; forecasting a later season requires current rosters, player movement, injuries/availability, and schedule data.
-- The ESPN endpoints are public-facing but unofficial for this project; handle request failures and schema changes.
-- The current dataset is descriptive and historical; it does not yet include verified current roster membership or player experience.
-- A `SyntaxError` encountered during notebook execution came from pasting Markdown triple-backtick fences into a Python cell. Only Python code, not the surrounding ``` fences, should be pasted into executable cells.
-- Checkpoint files are not proof of complete game coverage; use explicit game-ID reconciliation.
-
-## 11. Files created or targeted in Google Drive
-
-| Path relative to `NBA Dataset/` | Purpose | Status |
-|---|---|---|
-| `raw/nba_games_{season}_raw.csv` | Raw season-level game downloads | Created in game collection workflow |
-| `clean/nba_games_{season}_clean.csv` | Filtered regular-season games | Created and count-validated |
-| `nba_games_2015_2025_combined.csv` | Combined historical game table | Validated: 12,009 games |
-| `validation_report.csv` | Season-level game count checks | Created |
-| `player_boxscores/players_batch_XXXX.csv` | Checkpointed player box-score batches | Download workflow supplied; completeness unverified |
-| `player_boxscores/failed_batch_XXXX.csv` | Failed game download logs | Created when failures occur |
-| `nba_player_boxscores_2015_2025.csv` | Concatenated player-game rows | Combining code supplied; final completeness unverified |
-| `nba_complete_dataset_2015_2025.csv` | Merged player and game data | Merge code supplied; successful creation unverified |
-
-## 12. Next immediate actions
-
-1. Reconcile the downloaded player `GAME_ID`s against all 12,009 expected games.
-2. Retry missing or failed games and rebuild the combined player file.
-3. Run merge integrity and box-score quality checks.
-4. Export and commit the actual Colab notebooks alongside this README.
-5. Begin pregame feature engineering, then develop and validate a baseline prediction model.
+- Historical coverage ends at 2024–25 and does not by itself establish current NBA rosters or availability.
+- **487 games** have placeholder player box scores; those games are usable for results-based analyses but not for direct player-performance summaries.
+- Player IDs and starter indicators from the source required targeted auditing; corrected records should remain traceable via an audit file.
+- Player-experience measures calculated only from this ten-season extract are proxies for actual NBA career tenure.
+- Schedule disruptions, team changes, and incomplete player availability may influence historical comparisons.
+- For reproducibility, notebooks should run in a documented order, keep raw data immutable, and clearly separate pregame features from postgame outcomes.
 
 ---
 
-*Project documentation reflects the work discussed and reported so far. Results that have not been verified are explicitly labeled as such.*
+*Documentation describes the observed data preparation results and the planned single-model research design. Predictive findings have not yet been produced.*
