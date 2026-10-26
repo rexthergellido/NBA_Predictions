@@ -1,6 +1,6 @@
 [NBA_Standings_Prediction_README.md](https://github.com/user-attachments/files/33956574/NBA_Standings_Prediction_README.md)
 
-# NBA Regular-Season Standings Prediction — Data Engineering and Modeling Project
+# Predicting NBA Game Outcomes Using Logistic Regression: An Analysis of Historical Team and Player Performance
 
 **Status:** Historical game results validated; player box-score ingestion and merge scripts developed; modeling not yet started.
 
